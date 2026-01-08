@@ -122,7 +122,7 @@ def ask_gemini(prompt, api_key, system_role):
         PREGUNTA DEL USUARIO: {prompt}
         """
         
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
         response = model.generate_content(master_prompt)
         return response.text
     except Exception as e:
