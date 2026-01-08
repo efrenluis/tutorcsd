@@ -34,7 +34,7 @@ st.title("🎓 Asistente CSED - Efrén Luis Pérez")
 st.sidebar.header("Configuración Crítica")
 
 # API KEY
-api_key = st.sidebar.text_input("🔑 Pega aquí tu API KEY (sin comillas)", type="password")
+api_key = st.sidebar.text_input(AIzaSyDvFkfVqp5T_kh-RD2Ide5JPRlJjxAlIkQ, type="password")
 
 if st.sidebar.button("🗑️ Limpiar Memoria"):
     st.cache_resource.clear()
