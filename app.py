@@ -30,10 +30,7 @@ st.markdown("""
 @st.cache_resource
 def load_all_pdfs():
     """
-    Lee todos los PDFs del directorio y los clasifica en 3 categorías:
-    1. DATOS_REALES (06_...): Fechas y alumnos actuales.
-    2. ESTILO_REFERENCIA (01_...): Modelos de redacción antiguos.
-    3. CONOCIMIENTO (00, 02, 03, 04, 05...): Normativa, guías, rúbricas.
+    Lee todos los PDFs del directorio y los clasifica.
     """
     context = {
         "DATOS_REALES": "",
@@ -41,10 +38,11 @@ def load_all_pdfs():
         "ESTILO_REFERENCIA": ""
     }
     
-    files = [f for f in os.listdir('.') if f.endswith('.pdf')]
+    # Lista archivos en el directorio actual
+    files = [f for f in os.listdir('.') if f.lower().endswith('.pdf')]
     
     if not files:
-        return None
+        return None, 0
 
     count = 0
     for filename in files:
@@ -54,163 +52,141 @@ def load_all_pdfs():
             for page in reader.pages:
                 text += page.extract_text() + "\n"
             
-            # Clasificación según tus instrucciones
+            # Clasificación por prefijos
             if filename.startswith("06_VARIABLES"):
-                context["DATOS_REALES"] += f"\n--- ARCHIVO VITAL: {filename} ---\n{text}"
+                context["DATOS_REALES"] += f"\n--- ARCHIVO VITAL ACTUAL: {filename} ---\n{text}"
             elif filename.startswith("01_MODELO"):
-                context["ESTILO_REFERENCIA"] += f"\n--- MODELO DE ESTILO (NO USAR DATOS): {filename} ---\n{text}"
+                context["ESTILO_REFERENCIA"] += f"\n--- MODELO PASADO (ESTILO): {filename} ---\n{text}"
             else:
-                # Aquí entran 00, 02, 03, 04, 05 (Importantes para el conocimiento)
-                context["CONOCIMIENTO_NORMATIVO"] += f"\n--- FUENTE DE CONOCIMIENTO: {filename} ---\n{text}"
+                # Archivos 00, 02, 03, 04, 05
+                context["CONOCIMIENTO_NORMATIVO"] += f"\n--- NORMATIVA/GUÍA: {filename} ---\n{text}"
             
             count += 1
         except Exception as e:
-            print(f"Error leyendo {filename}: {e}")
+            st.error(f"Error leyendo {filename}: {e}")
             
     return context, count
 
-# Cargar contexto
-with st.spinner("Cargando base de conocimiento CSED (Guías, Rúbricas, Variables)..."):
+# Cargar contexto al arrancar
+with st.spinner("Cargando base de conocimiento CSED..."):
     knowledge_base, file_count = load_all_pdfs()
 
-if file_count:
-    st.toast(f"✅ Sistema cargado con éxito. {file_count} documentos procesados.", icon="📚")
+if file_count > 0:
+    st.toast(f"✅ {file_count} documentos cargados.", icon="📚")
 else:
-    st.error("⚠️ No se detectaron archivos PDF. Asegúrate de subirlos al mismo directorio.")
+    st.error("⚠️ No se detectaron archivos PDF en el repositorio.")
 
 # ==============================================================================
-# 3. CEREBRO IA (GEMINI)
+# 3. CEREBRO IA (CONEXIÓN ROBUSTA)
 # ==============================================================================
 
 def ask_gemini(prompt, api_key, system_role):
     if not api_key:
-        return "⚠️ Error: Falta la API Key. Introdúcela en el menú lateral."
+        return "⚠️ Error: Introduce la clave API en el menú lateral."
     
     try:
+        # Configuración de la API Key
         genai.configure(api_key=api_key)
         
-        # PROMPT DE SISTEMA MAESTRO (Aquí definimos la jerarquía)
+        # Selección de modelo: Usamos la ruta completa para evitar el error 404
+        # El modelo 'gemini-1.5-flash' es el ideal para esta tarea.
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        
+        # Construcción del prompt maestro con jerarquía de datos
         master_prompt = f"""
         {system_role}
         
-        TIENES ACCESO A 3 TIPOS DE FUENTES DE INFORMACIÓN. SIGUE ESTA JERARQUÍA ESTRICTA:
+        INSTRUCCIONES DE CONTEXTO:
+        1. Tu identidad es Efrén Luis Pérez, tutor del CSED.
+        2. Los datos de 'DATOS_REALES' mandan sobre fechas y alumnos (Curso actual).
+        3. Los datos de 'ESTILO_REFERENCIA' son solo para copiar el tono de voz.
+        4. Usa 'CONOCIMIENTO_NORMATIVO' para rúbricas y manuales.
         
-        1. [PRIORIDAD MÁXIMA - LA VERDAD ACTUAL] -> Usa el texto bajo 'DATOS_REALES' (archivos 06_VARIABLES).
-           - De aquí saca SIEMPRE: fechas, nombres de alumnos, nombre del tutor actual, plazos vigentes.
-           
-        2. [PRIORIDAD ALTA - CONOCIMIENTO TÉCNICO] -> Usa el texto bajo 'CONOCIMIENTO_NORMATIVO' (archivos 00, 02, 03, 04, 05).
-           - De aquí saca: Rúbricas de corrección, manuales de Moodle, contenido del temario, protocolos de actuación.
-           - Si te preguntan "cómo se corrige" o "qué dice la guía", mira AQUÍ.
-           
-        3. [SOLO REFERENCIA DE ESTILO] -> Usa el texto bajo 'ESTILO_REFERENCIA' (archivos 01_MODELO).
-           - Úsalos SOLO para imitar el tono, el formato de las actas o correos.
-           - IGNORA CUALQUIER FECHA O NOMBRE que aparezca aquí, son del pasado.
+        --- DATOS ACTUALES (06_VARIABLES) ---
+        {knowledge_base['DATOS_REALES'] if knowledge_base else 'No hay datos'}
         
-        =========================================
-        CONTENIDO CARGADO DEL SISTEMA:
+        --- CONOCIMIENTO ACADÉMICO (00, 02, 03, 04, 05) ---
+        {knowledge_base['CONOCIMIENTO_NORMATIVO'][:30000] if knowledge_base else 'No hay datos'}
         
-        [DATOS_REALES]:
-        {knowledge_base.get('DATOS_REALES', 'No cargado')}
-        
-        [CONOCIMIENTO_NORMATIVO]:
-        {knowledge_base.get('CONOCIMIENTO_NORMATIVO', 'No cargado')[:50000]}  # Limitado para optimizar token window si es muy grande
-        
-        [ESTILO_REFERENCIA]:
-        {knowledge_base.get('ESTILO_REFERENCIA', 'No cargado')[:10000]}
-        =========================================
+        --- MODELOS DE ESTILO (01_MODELO) ---
+        {knowledge_base['ESTILO_REFERENCIA'][:10000] if knowledge_base else 'No hay datos'}
         
         PREGUNTA DEL USUARIO: {prompt}
         """
         
-        model = genai.GenerativeModel('models/gemini-1.5-pro')
         response = model.generate_content(master_prompt)
         return response.text
     except Exception as e:
         return f"Error conectando con Gemini: {str(e)}"
 
 # ==============================================================================
-# 4. INTERFAZ DE USUARIO
+# 4. INTERFAZ DE USUARIO (SIDEBAR Y SECCIONES)
 # ==============================================================================
 
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2991/2991148.png", width=70)
     st.title("Tutor IA CSED")
     
-    api_key = st.text_input("🔑 API Key Gemini", type="password")
+    # Campo para la API Key (Sin comillas al pegar)
+    user_key = st.text_input("🔑 API Key Gemini", type="password", help="Pega la clave de Google Cloud y pulsa ENTER.")
     
     menu = st.radio("SECCIONES", ["Panel Principal", "Corrector Tareas", "Chat Experto", "Generador Documentos"])
     
-    st.info("ℹ️ Los archivos 06_VARIABLES definen el curso actual.")
+    if st.button("🗑️ Limpiar Memoria (Cache)"):
+        st.cache_resource.clear()
+        st.rerun()
 
-# --- SECCIÓN 1: PANEL PRINCIPAL ---
+# --- PANEL PRINCIPAL ---
 if menu == "Panel Principal":
-    st.header("📊 Dashboard del Curso Actual")
+    st.header("📊 Dashboard del Curso")
+    st.markdown(f"""
+    <div class="info-box">
+    <h4>Estado del Sistema</h4>
+    <p>Archivos detectados en el servidor: <b>{file_count}</b></p>
+    <p>Tutor actual: <b>Efrén Luis Pérez</b></p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("""
-        <div class="info-box">
-        <h4>Base de Conocimiento Activa</h4>
-        <p>El sistema ha procesado guías, rúbricas y variables.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        if st.button("🔄 Analizar Fechas Clave (06_VARIABLES)"):
-            with st.spinner("Consultando archivos 06..."):
-                res = ask_gemini("Extrae del archivo 06_VARIABLES las fechas de inicio, examen y cierre. Haz una lista.", api_key, "Eres un asistente administrativo.")
-                st.success(res)
+    if st.button("📅 Extraer fechas clave actuales"):
+        with st.spinner("Buscando en 06_VARIABLES..."):
+            res = ask_gemini("Dime la fecha de inicio de curso y la del examen según los archivos 06.", user_key, "Eres un asistente administrativo.")
+            st.info(res)
 
-# --- SECCIÓN 2: CORRECTOR DE TAREAS ---
+# --- CORRECTOR ---
 elif menu == "Corrector Tareas":
-    st.header("📝 Corrección Oficial (Rúbricas CSED)")
-    st.info("Este módulo usa los archivos 05_EVALUACION para aplicar las rúbricas correctas.")
+    st.header("📝 Corrector de Actividades")
+    tarea = st.text_input("¿Qué tarea vas a corregir?")
+    alumno = st.text_area("Pega aquí el texto del alumno:", height=250)
     
-    tarea = st.selectbox("Selecciona Actividad:", ["T1: Valores", "T2: Líderes", "T3: Instituciones", "T14: Rugby", "Foro General"])
-    alumno_text = st.text_area("Pega aquí el contenido o respuesta del alumno:", height=200)
-    
-    if st.button("Corregir Tarea"):
-        role = "Eres el Corrector Oficial CSED. Usa las Rúbricas de los archivos 05_EVALUACION. Formato: 1.Identificación, 2.Evaluación Rúbrica, 3.Nota, 4.Feedback Enriquecido."
-        with st.spinner("Aplicando rúbrica..."):
-            res = ask_gemini(f"Corrige la tarea: {tarea}. Contenido alumno: {alumno_text}", api_key, role)
+    if st.button("Corregir con Rúbrica"):
+        with st.spinner("Analizando..."):
+            res = ask_gemini(f"Tarea: {tarea}. Contenido: {alumno}", user_key, "Eres el Corrector CSED. Usa la técnica sándwich y el formato oficial de 7 puntos.")
             st.markdown(res)
 
-# --- SECCIÓN 3: CHAT EXPERTO ---
+# --- CHAT ---
 elif menu == "Chat Experto":
-    st.header("💬 Consultas al Manual y Guía")
-    
-    mode = st.selectbox("Modo de Consulta:", ["Tutoría (Guía Didáctica 03)", "Técnico (Manual Moodle 02)", "Gestión (Protocolos 00/06)"])
-    
+    st.header("💬 Consulta de Normativa y Manuales")
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    for msg in st.session_state.messages:
-        st.chat_message(msg["role"]).write(msg["content"])
+    for m in st.session_state.messages:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
 
-    if prompt := st.chat_input("Pregunta sobre normativa, fechas o procedimientos..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        st.chat_message("user").write(prompt)
-        
-        # Definir roles según archivos
-        sys_msg = "Eres un asistente experto CSED."
-        if "Técnico" in mode:
-            sys_msg = "Eres experto en Moodle. Basa tus respuestas en los archivos 02_MOODLE."
-        elif "Tutoría" in mode:
-            sys_msg = "Eres tutor pedagógico. Basa tus respuestas en 03_CURSO (Guías y Temas)."
-            
-        with st.spinner("Consultando fuentes..."):
-            response = ask_gemini(prompt, api_key, sys_msg)
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.chat_message("assistant").write(response)
+    if p := st.chat_input("Pregúntame cualquier duda técnica o académica..."):
+        st.session_state.messages.append({"role": "user", "content": p})
+        st.chat_message("user").write(p)
+        with st.spinner("Consultando PDFs..."):
+            r = ask_gemini(p, user_key, "Eres un tutor experto en el Bloque Común Nivel 1.")
+            st.session_state.messages.append({"role": "assistant", "content": r})
+            st.chat_message("assistant").write(r)
 
-# --- SECCIÓN 4: GENERADOR DOCUMENTOS ---
+# --- GENERADOR ---
 elif menu == "Generador Documentos":
-    st.header("📑 Generador de Actas y Correos")
-    st.markdown("Genera documentos usando el **estilo** de los archivos `01_MODELO` pero con los **datos** de `06_VARIABLES`.")
-    
-    tipo = st.radio("Generar:", ["Acta Semanal", "Correo Bienvenida", "Informe Plagio"])
+    st.header("📑 Generador de Documentos Oficiales")
+    tipo = st.selectbox("Documento a generar:", ["Acta Semanal", "Correo de Bienvenida", "Mensaje de Apertura de Bloque"])
     
     if st.button("Generar Borrador"):
-        prompt_gen = f"Genera un {tipo}. Usa el ESTILO de redacción de los archivos 01_MODELO, pero usa los DATOS REALES (fechas, nombres) de 06_VARIABLES."
-        res = ask_gemini(prompt_gen, api_key, "Eres secretario administrativo CSED.")
-        st.text_area("Resultado:", value=res, height=400)
+        with st.spinner("Redactando..."):
+            res = ask_gemini(f"Genera un {tipo} con los datos del curso actual.", user_key, "Usa el estilo de los archivos 01_MODELO.")
+            st.text_area("Resultado:", value=res, height=350)
