@@ -87,7 +87,7 @@ def ask_gemini(prompt, api_key, system_role):
         return "⚠️ Error: Falta la API Key. Introdúcela en el menú lateral."
     
     try:
-        genai.configure(api_key="AIzaSyA-R6Qrt-Qajht-48nrCb00Zvq0dGsVvWM")
+        genai.configure(api_key=api_key)
         
         # PROMPT DE SISTEMA MAESTRO (Aquí definimos la jerarquía)
         master_prompt = f"""
